@@ -187,7 +187,12 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                 }
                 Integer[] pretmp={0,0};
                 for(Integer[] tmp:samepare){
-                    for(int i = 0;i<tmp[])
+                    for(int i = 0;i<tmp[0]-pretmp[0];i++){
+                        addrow.get(i);
+                    }
+                    for(int i = 0;i<tmp[1]-pretmp[1];i++){
+                        delrow.get(i);
+                    }
                 }
                 diff=d.diff(pret_text,curr_text);
 
