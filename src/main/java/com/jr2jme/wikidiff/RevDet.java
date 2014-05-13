@@ -147,6 +147,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                 List<String> pret_text = new ArrayList<String>();
                 List<Integer> addrow=new ArrayList<Integer>();
                 List<Integer> delrow=new ArrayList<Integer>();
+                List<Integer[]> samepare = new ArrayList<Integer[]>();
                 for (String aDelta : diff) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
                     //System.out.println(delta.get(x));
                     if (aDelta.equals("+")) {
@@ -178,119 +179,22 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                         }
                         b++;
                     } else if (aDelta.equals("|")) {
+                        Integer[] tmp={a,b};
+                        samepare.add(tmp);
                         a++;
                         b++;
                     }
+                }
+                Integer[] pretmp={0,0};
+                for(Integer[] tmp:samepare){
+                    for(int i = 0;i<tmp[])
                 }
                 diff=d.diff(pret_text,curr_text);
 
                 version++;
                 prev_text=parastr;
             }
-            List<Future<List<String>>> futurelist2 = null;
 
-            for(int ver=0;ver<futurelist2.size();ver++){//誰がどこを書いたかとか
-                String current_editor=namelist.get(ver);
-                try {
-                    List<String> delta = futurelist2.get(ver).get();
-                    StringTagger tagger = SenFactory.getStringTagger(null);
-                    CompositeTokenFilter ctFilter = new CompositeTokenFilter();
-
-                    try {
-                        ctFilter.readRules(new BufferedReader(new StringReader("名詞-数")));
-                        tagger.addFilter(ctFilter);
-
-                        ctFilter.readRules(new BufferedReader(new StringReader("記号-アルファベット")));
-                        tagger.addFilter(ctFilter);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                    List<Token> tokens = new ArrayList<Token>();
-                    try {
-                        tokens=tagger.analyze(wikitext.get(ver), tokens);
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-
-                    List<String> current_text = new ArrayList<String>(tokens.size());
-                    List<String> text = new ArrayList<String>();
-                    for(Token token:tokens){
-
-                        text.add(token.getSurface());
-                    }
-
-
-                    WhoWriteResult now=whowrite(title,current_editor,prevdata,text,prevtext,delta,offset+ver+1);
-                    int last;
-                    if(tail>=20){
-                        last=20;
-                        head=tail+1;
-                    }
-                    else{
-                        last=tail;
-                        head=0;
-                    }
-                    List<String> edrvted=new ArrayList<String>();
-                    List<Integer> rvted=new ArrayList<Integer>();
-                    for(int ccc=last-1;ccc>=0;ccc--){//リバート検知
-                        int index=(head+ccc)%20;
-                        if(now.compare(resultsarray[index])){
-                            //System.out.println(now.version+":"+resultsarray[index].version);
-                            int dd=0;
-                            int ad=0;
-                            for(String type:delta){
-
-                                if(type.equals("+")){
-                                    //System.out.println(now.getInsertedTerms().getTerms().get(dd));
-                                    now.getWhoWritever().getWhowritelist().get(ad).setEditor(resultsarray[index].getDellist().get(dd));
-                                    //now.whoWrite.getEditors().set(ad,resultsarray[ccc].dellist.get(dd));
-                                    dd++;
-                                    ad++;
-                                }
-                                else if(type.equals("|")){
-                                    ad++;
-                                }
-                            }
-                            BasicDBObject obj = new BasicDBObject();
-                            obj.append("title",title).append("version",version).append("editor",now.getEditor()).append("rvted",rvted).append("edrvted",edrvted);
-                            //dbCollection5.insert(obj);
-                            //now=whowrite(current_editor,prevdata,text,prevtext,delta,offset+ver+1)
-                            break;
-                        }
-                        if(ccc!=last-1) {
-                            if (now.comparehash(resultsarray[index].getText())) {//完全に戻していた場合
-                                int indext = 0;
-                                for (WhoWrite who : now.getWhoWritever().getWhowritelist()) {
-                                    who.setEditor(resultsarray[index].getWhoWritever().getWhowritelist().get(indext).getEditor());
-                                    indext++;
-                                }
-                                for (int cou = ccc + 1; cou < last; cou++) {
-                                    int idx = (head + cou) % 20;
-                                    rvted.add(resultsarray[idx].getInsertedTerms().getVersion());
-                                    edrvted.add(resultsarray[idx].getInsertedTerms().getEditor());
-                                }
-                                BasicDBObject obj = new BasicDBObject();
-                                obj.append("title", title).append("version", version).append("editor", now.getEditor()).append("rvted", rvted).append("edrvted", edrvted);
-                                //dbCollection5.insert(obj);
-                                break;
-                            }
-                        }
-                    }
-
-                    resultsarray[tail%20]=now;
-                    tail++;
-
-                    //coll2.insert(now.getWhoWritever().getWhowritelist());//ここは20140423現在使う
-                    prevdata=now.getWhoWritever().getWhowritelist();
-                    prevtext=text;
-
-
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                } catch (ExecutionException e) {
-                    e.printStackTrace();
-                }
-            }
             offset+=NUMBER;
             //System.out.println(offset);
             findQuery = new BasicDBObject();//
