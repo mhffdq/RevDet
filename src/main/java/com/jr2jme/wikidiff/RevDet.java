@@ -23,7 +23,7 @@ import java.util.concurrent.*;
 //import org.atilika.kuromoji.Token;
 
 
-public class WikiDiffCore {//Wikipediaのログから差分をとって誰がどこを書いたかを保存するもの リバート対応
+public class RevDet {//Wikipediaのログから差分をとって誰がどこを書いたかを保存するもの リバート対応
     private static DBCollection coll;
     //private static JacksonDBCollection<WhoWrite,String> coll2;
     //private static JacksonDBCollection<InsertedTerms,String> coll3;//insert
@@ -52,7 +52,7 @@ public class WikiDiffCore {//Wikipediaのログから差分をとって誰がど
         //coll4 = JacksonDBCollection.wrap(dbCollection4, DeletedTerms.class,String.class);
 
 
-        WikiDiffCore wikidiff=new WikiDiffCore();
+        RevDet wikidiff=new RevDet();
         //wikititle= title;//タイトル取得
         //Pattern pattern = Pattern.compile(title+"/log.+|"+title+"/history.+");
         Cursor cur=null;
@@ -113,40 +113,82 @@ public class WikiDiffCore {//Wikipediaのログから差分をとって誰がど
         int tail=0;
         int head;
         while(cursor.hasNext()) {//回す
-            List<String> namelist=new ArrayList<String>();
-            List<String> wikitext=new ArrayList<String>();
+            List<String> namelist=new ArrayList<String>(NUMBER+1);
+            List<String> wikitext=new ArrayList<String>(NUMBER+1);
             //List<Future<List<String>>> futurelist = new ArrayList<Future<List<String>>>(NUMBER+1);
             for (DBObject dbObject:cursor) {//まず100件ずつテキストを(並列で)形態素解析
-                //Wikitext wikitext=new Wikitext(title,(Date)dbObject.get("date"),(String)dbObject.get("name"),(String)dbObject.get("text"),(Integer)dbObject.get("revid"),(String)dbObject.get("comment"),(Integer)dbObject.get("version"));
                 wikitext.add((String)dbObject.get("text"));
-                //futurelist.add(exec.submit(new Kaiseki((String)dbObject.get("text"))));
                 namelist.add((String)dbObject.get("name"));
-
-
-                /*System.out.println(nowchange.size());
-                for(String how:nowchange){
-                    System.out.println(how);
-                }*/
-                //System.out.println(wikitext.getVersion());
-
             }
             cursor.close();
-            int i=0;
-            List<CalDiff> tasks2 = new ArrayList<CalDiff>(wikitext.size());
+            List<List<String>> tasks2 = new ArrayList<List<String>>(wikitext.size()+1);
             for(String future:wikitext){//差分をとる
                 List<String> parastr= Arrays.asList(future.split("\n\n|。"));
-                tasks2.add(new CalDiff(parastr, prev_text));
-                i++;
+                List<String> prechange=new ArrayList<String>();
+                List<String> nowchange=new ArrayList<String>();
+                Levenshtein3 d = new Levenshtein3();
+                List<String> diff = d.diff(prev_text, parastr);
+                int a=0;
+                int b=0;
+                StringTagger tagger = SenFactory.getStringTagger(null);
+                CompositeTokenFilter ctFilter = new CompositeTokenFilter();
+
+                try {
+                    ctFilter.readRules(new BufferedReader(new StringReader("名詞-数")));
+                    tagger.addFilter(ctFilter);
+
+                    ctFilter.readRules(new BufferedReader(new StringReader("記号-アルファベット")));
+                    tagger.addFilter(ctFilter);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+
+                List<String> curr_text = new ArrayList<String>();
+                List<String> pret_text = new ArrayList<String>();
+                List<Integer> addrow=new ArrayList<Integer>();
+                List<Integer> delrow=new ArrayList<Integer>();
+                for (String aDelta : diff) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
+                    //System.out.println(delta.get(x));
+                    if (aDelta.equals("+")) {
+                        List<Token> tokens = new ArrayList<Token>();
+                        try {
+                            tokens=tagger.analyze(parastr.get(a), tokens);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+
+                        for(Token token:tokens){
+                            curr_text.add(token.getSurface());
+                        }
+                        addrow.add(a);
+                        a++;
+                    } else if (aDelta.equals("-")) {
+                        prechange.add(prev_text.get(b));
+                        List<Token> tokens = new ArrayList<Token>();
+                        try {
+                            tagger.analyze(prev_text.get(b), tokens);
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+
+                        delrow.add(b);
+                        for(Token token:tokens){
+                            pret_text.add(token.getSurface());
+                        }
+                        b++;
+                    } else if (aDelta.equals("|")) {
+                        a++;
+                        b++;
+                    }
+                }
+                diff=d.diff(pret_text,curr_text);
+
                 version++;
                 prev_text=parastr;
-
             }
             List<Future<List<String>>> futurelist2 = null;
-            try {
-                futurelist2=exec.invokeAll(tasks2);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }//差分ここまで
+
             for(int ver=0;ver<futurelist2.size();ver++){//誰がどこを書いたかとか
                 String current_editor=namelist.get(ver);
                 try {
@@ -299,124 +341,7 @@ public class WikiDiffCore {//Wikipediaのログから差分をとって誰がど
         return whowrite;
 
 
-
     }
-
-
 
 }
 
-class CalDiff implements Callable<List<String>> {//差分
-    List<String> current_text;
-    List<String> prev_text;
-    public CalDiff(List<String> current_text,List<String> prev_text){
-        this.current_text=current_text;
-        this.prev_text=prev_text;
-    }
-    @Override
-    public List<String> call() {//並列で差分
-        List<String> prechange=new ArrayList<String>();
-        List<String> nowchange=new ArrayList<String>();
-
-
-
-        Levenshtein3 d = new Levenshtein3();
-        List<String> diff = d.diff(prev_text, current_text);
-        int a=0;
-        int b=0;
-        StringTagger tagger = SenFactory.getStringTagger(null);
-        CompositeTokenFilter ctFilter = new CompositeTokenFilter();
-
-        try {
-            ctFilter.readRules(new BufferedReader(new StringReader("名詞-数")));
-            tagger.addFilter(ctFilter);
-
-            ctFilter.readRules(new BufferedReader(new StringReader("記号-アルファベット")));
-            tagger.addFilter(ctFilter);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        List<String> current_text = new ArrayList<String>();
-        List<String> pret_text = new ArrayList<String>();
-        for (String aDelta : diff) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
-            //System.out.println(delta.get(x));
-            if (aDelta.equals("+")) {
-                //nowchange.add(parastr.get(a));
-
-                List<Token> tokens = new ArrayList<Token>();
-                try {
-                    tokens=tagger.analyze(current_text.get(a), tokens);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-
-                for(Token token:tokens){
-                    current_text.add(token.getSurface());
-                }
-                a++;
-            } else if (aDelta.equals("-")) {
-                prechange.add(prev_text.get(b));
-                List<Token> tokens = new ArrayList<Token>();
-                try {
-                    tagger.analyze(prev_text.get(b), tokens);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-
-                for(Token token:tokens){
-                    pret_text.add(token.getSurface());
-                }
-                b++;
-            } else if (aDelta.equals("|")) {
-                a++;
-                b++;
-            }
-        }
-        diff=d.diff(pret_text,current_text);
-        return diff;
-    }
-}
-
-class Kaiseki implements Callable<List<String>> {//形態素解析
-    String wikitext;//gosenだとなんか駄目だった→kuromojimo別のでダメ
-    public Kaiseki(String wikitext){
-        this.wikitext=wikitext;
-    }
-    @Override
-    public List<String> call() {
-
-        StringTagger tagger = SenFactory.getStringTagger(null);
-        CompositeTokenFilter ctFilter = new CompositeTokenFilter();
-
-        try {
-            ctFilter.readRules(new BufferedReader(new StringReader("名詞-数")));
-            tagger.addFilter(ctFilter);
-
-            ctFilter.readRules(new BufferedReader(new StringReader("記号-アルファベット")));
-            tagger.addFilter(ctFilter);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        List<Token> tokens = new ArrayList<Token>();
-        try {
-            tokens=tagger.analyze(wikitext, tokens);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-        List<String> current_text = new ArrayList<String>(tokens.size());
-
-       for(Token token:tokens){
-
-            current_text.add(token.getSurface());
-        }
-
-        return current_text;
-    }
-
-
-}
