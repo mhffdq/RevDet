@@ -110,6 +110,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         List<String> prev_text=new ArrayList<String>();
         List<String> prevtext = new ArrayList<String>();
         WhoWriteResult[] resultsarray= new WhoWriteResult[20];//キューっぽいもの
+        List<Integer[]>[] samearray=new List[20];
         int tail=0;
         int head;
         while(cursor.hasNext()) {//回す
@@ -165,15 +166,14 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                         addrow.add(a);
                         a++;
                     } else if (aDelta.equals("-")) {
-                        prechange.add(prev_text.get(b));
                         List<Token> tokens = new ArrayList<Token>();
                         try {
-                            tagger.analyze(prev_text.get(b), tokens);
+                            tokens=tagger.analyze(prev_text.get(a), tokens);
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
 
-                        delrow.add(b);
+
                         for(Token token:tokens){
                             pret_text.add(token.getSurface());
                         }
@@ -185,15 +185,21 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                         b++;
                     }
                 }
+                samearray[tail]=samepare;
                 Integer[] pretmp={0,0};
+                List<String> insterms= new ArrayList<String>();
+                List<String> delterms=new ArrayList<String>();
                 for(Integer[] tmp:samepare){
-                    for(int i = 0;i<tmp[0]-pretmp[0];i++){
-                        addrow.get(i);
+                    for(int i = 1;i<tmp[0]-pretmp[0];i++){
+                        insterms.add(parastr.get(pretmp[0]+i));
                     }
-                    for(int i = 0;i<tmp[1]-pretmp[1];i++){
-                        delrow.get(i);
+                    for(int i = 1;i<tmp[1]-pretmp[1];i++){
+                        delterms.add(parastr.get(pretmp[1]+i));
                     }
+
+                    pretmp=tmp;
                 }
+                new DiffPos()
                 diff=d.diff(pret_text,curr_text);
 
                 version++;
@@ -252,5 +258,22 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
 
     }
 
+}
+
+class DiffPos {
+    List<String> del;
+    List<String> insert;
+    int preue;
+    int preshita;
+    int nowue;
+    int nowshita;
+    public DiffPos(List<String> del, List<String> insert, int preue, int preshita, int nowue, int nowshita){
+        this.del=del;
+        this.insert=insert;
+        this.preue=preue;
+        this.preshita=preshita;
+        this.nowue=nowue;
+        this.nowshita=nowshita;
+    }
 }
 
