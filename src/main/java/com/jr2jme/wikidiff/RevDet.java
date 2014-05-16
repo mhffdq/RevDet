@@ -165,9 +165,9 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                             b++;
                         }
                     }
-                    for(DeleteTerm del:dellist){//全消された単語の中から
-                        for(term) {
-                            if (del.getterm().eqals(term.getterm())) {//今追加された単語かどうか確かめて//っていうかループ逆の方が絶対いいなこれ
+                    for(term) {//今消された単語と同じ単語があるかどうか
+                        for(DeleteTerm del:dellist){//全消された単語の中から
+                            if (del.getterm().eqals(term.getterm())) {//確かめて
                                 int ue = del.getue();//文章の上と
                                 int shita = del.getshita();//下で
                                 for (int x = nowversion - delterm.getversion(); x < nowversion; x++) {//矛盾が出ないか確かめる
