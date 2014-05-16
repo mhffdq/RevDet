@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.Arrays;
 import java.util.concurrent.*;
 
 //import org.atilika.kuromoji.Token;
@@ -111,6 +110,8 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         List<String> prevtext = new ArrayList<String>();
         WhoWriteResult[] resultsarray= new WhoWriteResult[20];//キューっぽいもの
         List<Integer[]>[] samearray=new List[20];
+        List<DeleteTerm> dellist = new ArrayList<DeleteTerm>();
+        List<String>[] difflist = new List[20];
         int tail=0;
         int head;
         while(cursor.hasNext()) {//回す
@@ -124,130 +125,102 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
             cursor.close();
             List<Future<List<String>>> tasks = new ArrayList<Future<List<String>>>(futurelist.size()+1);
             int i=0;
-            for(Future<List<String>> future:futurelist){//差分をとる
+            for(Future<List<String>> future:futurelist) {//差分をとる
                 try {
-                    List<String> text=future.get();
+                    List<String> text = future.get();
                     tasks.add(exec.submit(new CalDiff(text, prev_text, title, version, namelist.get(i))));
                     i++;
                     version++;
-                    prev_text=text;
+                    prev_text = text;
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 } catch (ExecutionException e) {
                     e.printStackTrace();
                 }
-
-                List<Integer> addrow=new ArrayList<Integer>();
-                List<Integer> delrow=new ArrayList<Integer>();
-                int a=0;
-                int b=0;
-                List<Integer[]> samepare = new ArrayList<Integer[]>();
-                for (Future<List<String>> aDelta : tasks) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
-                    try {
-                        for(String type:aDelta.get()){
-                            //System.out.println(delta.get(x));
-                            if (type.equals("+")) {
-                                addrow.add(a);
-                                a++;
-                            } else if (type.equals("-")) {
-                                delrow.add(b);
-                                b++;
-                            } else if (type.equals("|")) {
-                                Integer[] tmp={a,b};
-                                samepare.add(tmp);
-                                a++;
-                                b++;
-                            }
-                        }
-                        samearray[tail]=samepare;
-
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    } catch (ExecutionException e) {
-                        e.printStackTrace();
-                    }
-                    Integer[] pretmp={0,0};
-                    String nowchange="";
-                    String prechange="";
-                    List<DiffPos> difflist = new ArrayList<DiffPos>();
-                    for(Integer[] tmp:samepare){//同じ内容だった行のペア
-                        for(int c = 1;i<tmp[0]-pretmp[0];c++){
-                            nowchange+=futurelist.get(pretmp[0]+c);
-                        }
-                        for(int c = 1;i<tmp[1]-pretmp[1];c++){
-                            prechange+=parastr.get(pretmp[1]+c);
-                        }
-
-                        List<Token> tokens = new ArrayList<Token>();
-                        try {
-                            tokens=tagger.analyze(nowchange, tokens);
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                        List <String>insline=new ArrayList<String>();
-                        for(Token token:tokens){
-                            insline.add(token.getSurface());
-                        }
-                        try {
-                            tokens=tagger.analyze(nowchange, tokens);
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
-                        List<String> delline=new ArrayList<String>();
-                        for(Token token:tokens){
-                            delline.add(token.getSurface());
-                        }
-                        diff=d.diff(delline,insline);
-                        List<String> insterms=new ArrayList<String>();
-                        List<String >delterms=new ArrayList<String>();
-                        a=0;
-                        b=0;
-                        for (String aDelta : diff) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
-                            //System.out.println(delta.get(x));
-                            if (aDelta.equals("+")) {
-                                insterms.add(insline.get(a));
-                                a++;
-                            } else if (aDelta.equals("-")) {
-                                delterms.add(delline.get(b));
-                                b++;
-                            } else if (aDelta.equals("|")) {
-                                a++;
-                                b++;
-                            }
-                        }
-                        difflist.add(new DiffPos(insterms,delterms,pretmp[0],pretmp[1],tmp[0],tmp[1]));
-                        pretmp=tmp;
-
-                    }
-                int last;
-                if(tail>=20){
-                    last=20;
-                    head=tail+1;
-                }
-                else{
-                    last=tail;
-                    head=0;
-                }
-                for (int ccc = last - 1; ccc >= 0; ccc--) {//リバート検知
-                    int index = (head + ccc) % 20;
-                    List<DiffPos>prediflist=editarray[index].getdifflist();
-                    for(DiffPos diffpos:prediflist){
-                        diffpos
-                    }
-                }
-
-                version++;
-                prev_text=parastr;
             }
+            for (Future<List<String>> aDelta : tasks) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
+                try {
+                    List<Integer> instermpos = new ArrayList<Integer>();
+                    List<String> insterm = new ArrayList<String>();
+                    List<Integer> deltermpos = new ArrayList<Integer>();
+                    List<String> delterm = new ArrayList<String>();
+                    List<Integer[]> samepare = new ArrayList<Integer[]>();
+                    int a = 0;
+                    int b = 0;
+                    int c = 0;
+                    for (String type : aDelta.get()) {
+                        if (type.equals("+")) {
+                            instermpos.add(a);
+                            insterm.add(futurelist.get(c).get().get(a));
+                            a++;
+                        } else if (type.equals("-")) {
+                            deltermpos.add(b);
+                            delterm.add(futurelist.get(c).get().get(a));
+                            whowrite.delete(b,editor,version);//追加した単語には位置とかいろいろ情報合って分かるので適当にやる
+                            b++;
+                        } else if (type.equals("|")) {
+                            Integer[] tmp = {a, b};
+                            samepare.add(tmp);
+                            a++;
+                            b++;
+                        }
+                    }
+                    for(DeleteTerm del:dellist){//全消された単語の中から
+                        for(term) {
+                            if (del.getterm().eqals(term.getterm())) {//今追加された単語かどうか確かめて//っていうかループ逆の方が絶対いいなこれ
+                                int ue = del.getue();//文章の上と
+                                int shita = del.getshita();//下で
+                                for (int x = nowversion - delterm.getversion(); x < nowversion; x++) {//矛盾が出ないか確かめる
+                                    int aa = 0;
+                                    int bb = 0;
+                                    for (int y = 0; y < difflist[index + x].size(); y++) {
+                                        String type = difflist[index + x].get(y);
+                                        if (type.equals("+")) {
+                                            ue++;
+                                            shita++;
+                                            aa++;
+                                        } else if (type.equals("-")) {
+                                            ue--;
+                                            shita--;
 
-            offset+=NUMBER;
-            //System.out.println(offset);
-            findQuery = new BasicDBObject();//
-            findQuery.put("title", title);
-            findQuery.put("version", new BasicDBObject("$gt", offset).append("$lte", offset + NUMBER));
-            sortQuery = new BasicDBObject();
-            sortQuery.put("version", 1);
-            cursor = coll.find(findQuery).sort(sortQuery).limit(NUMBER);
+                                            bb++;
+                                        } else if (type.equals("|")) {
+                                            Integer[] tmp = {a, b};
+                                            samepare.add(tmp);
+                                            if (aa > ue) {
+
+                                            }
+                                            if (aa > shita) {
+
+                                            }
+                                            aa++;
+                                            bb++;
+                                        }
+                                    }
+                                }
+                                if (term.ue > ue && term.shita < shita) {
+                                    revertterm;
+                                }
+                            }
+                        }
+                    }
+                    difflist[tail]=aDelta.get();
+                    samearray[tail] = samepare;
+
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (ExecutionException e) {
+                    e.printStackTrace();
+                }
+                offset += NUMBER;
+                //System.out.println(offset);
+                findQuery = new BasicDBObject();//
+                findQuery.put("title", title);
+                findQuery.put("version", new BasicDBObject("$gt", offset).append("$lte", offset + NUMBER));
+                sortQuery = new BasicDBObject();
+                sortQuery.put("version", 1);
+                cursor = coll.find(findQuery).sort(sortQuery).limit(NUMBER);
+            }
         }
         exec.shutdown();
         try {
