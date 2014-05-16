@@ -115,92 +115,126 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         int head;
         while(cursor.hasNext()) {//回す
             List<String> namelist=new ArrayList<String>(NUMBER+1);
-            List<String> wikitext=new ArrayList<String>(NUMBER+1);
+            List<Future<List<String>>> futurelist = new ArrayList<Future<List<String>>>(NUMBER+1);
             //List<Future<List<String>>> futurelist = new ArrayList<Future<List<String>>>(NUMBER+1);
             for (DBObject dbObject:cursor) {//まず100件ずつテキストを(並列で)形態素解析
-                wikitext.add((String)dbObject.get("text"));
                 namelist.add((String)dbObject.get("name"));
+                futurelist.add(exec.submit(new Kaiseki((String)dbObject.get("text"))));
             }
             cursor.close();
-            List<List<String>> tasks2 = new ArrayList<List<String>>(wikitext.size()+1);
-            for(String future:wikitext){//差分をとる
-                List<String> parastr= Arrays.asList(future.split("\n\n|。"));
-                List<String> prechange=new ArrayList<String>();
-                List<String> nowchange=new ArrayList<String>();
-                Levenshtein3 d = new Levenshtein3();
-                List<String> diff = d.diff(prev_text, parastr);
-                int a=0;
-                int b=0;
-                StringTagger tagger = SenFactory.getStringTagger(null);
-                CompositeTokenFilter ctFilter = new CompositeTokenFilter();
-
+            List<Future<List<String>>> tasks = new ArrayList<Future<List<String>>>(futurelist.size()+1);
+            int i=0;
+            for(Future<List<String>> future:futurelist){//差分をとる
                 try {
-                    ctFilter.readRules(new BufferedReader(new StringReader("名詞-数")));
-                    tagger.addFilter(ctFilter);
-
-                    ctFilter.readRules(new BufferedReader(new StringReader("記号-アルファベット")));
-                    tagger.addFilter(ctFilter);
-                } catch (IOException e) {
+                    List<String> text=future.get();
+                    tasks.add(exec.submit(new CalDiff(text, prev_text, title, version, namelist.get(i))));
+                    i++;
+                    version++;
+                    prev_text=text;
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (ExecutionException e) {
                     e.printStackTrace();
                 }
 
-                List<String> curr_text = new ArrayList<String>();
-                List<String> pret_text = new ArrayList<String>();
                 List<Integer> addrow=new ArrayList<Integer>();
                 List<Integer> delrow=new ArrayList<Integer>();
+                int a=0;
+                int b=0;
                 List<Integer[]> samepare = new ArrayList<Integer[]>();
-                for (String aDelta : diff) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
-                    //System.out.println(delta.get(x));
-                    if (aDelta.equals("+")) {
+                for (Future<List<String>> aDelta : tasks) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
+                    try {
+                        for(String type:aDelta.get()){
+                            //System.out.println(delta.get(x));
+                            if (type.equals("+")) {
+                                addrow.add(a);
+                                a++;
+                            } else if (type.equals("-")) {
+                                delrow.add(b);
+                                b++;
+                            } else if (type.equals("|")) {
+                                Integer[] tmp={a,b};
+                                samepare.add(tmp);
+                                a++;
+                                b++;
+                            }
+                        }
+                        samearray[tail]=samepare;
+
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (ExecutionException e) {
+                        e.printStackTrace();
+                    }
+                    Integer[] pretmp={0,0};
+                    String nowchange="";
+                    String prechange="";
+                    List<DiffPos> difflist = new ArrayList<DiffPos>();
+                    for(Integer[] tmp:samepare){//同じ内容だった行のペア
+                        for(int c = 1;i<tmp[0]-pretmp[0];c++){
+                            nowchange+=futurelist.get(pretmp[0]+c);
+                        }
+                        for(int c = 1;i<tmp[1]-pretmp[1];c++){
+                            prechange+=parastr.get(pretmp[1]+c);
+                        }
+
                         List<Token> tokens = new ArrayList<Token>();
                         try {
-                            tokens=tagger.analyze(parastr.get(a), tokens);
+                            tokens=tagger.analyze(nowchange, tokens);
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
-
-
+                        List <String>insline=new ArrayList<String>();
                         for(Token token:tokens){
-                            curr_text.add(token.getSurface());
+                            insline.add(token.getSurface());
                         }
-                        addrow.add(a);
-                        a++;
-                    } else if (aDelta.equals("-")) {
-                        List<Token> tokens = new ArrayList<Token>();
                         try {
-                            tokens=tagger.analyze(prev_text.get(a), tokens);
+                            tokens=tagger.analyze(nowchange, tokens);
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
-
-
+                        List<String> delline=new ArrayList<String>();
                         for(Token token:tokens){
-                            pret_text.add(token.getSurface());
+                            delline.add(token.getSurface());
                         }
-                        b++;
-                    } else if (aDelta.equals("|")) {
-                        Integer[] tmp={a,b};
-                        samepare.add(tmp);
-                        a++;
-                        b++;
-                    }
-                }
-                samearray[tail]=samepare;
-                Integer[] pretmp={0,0};
-                List<String> insterms= new ArrayList<String>();
-                List<String> delterms=new ArrayList<String>();
-                for(Integer[] tmp:samepare){
-                    for(int i = 1;i<tmp[0]-pretmp[0];i++){
-                        insterms.add(parastr.get(pretmp[0]+i));
-                    }
-                    for(int i = 1;i<tmp[1]-pretmp[1];i++){
-                        delterms.add(parastr.get(pretmp[1]+i));
-                    }
+                        diff=d.diff(delline,insline);
+                        List<String> insterms=new ArrayList<String>();
+                        List<String >delterms=new ArrayList<String>();
+                        a=0;
+                        b=0;
+                        for (String aDelta : diff) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
+                            //System.out.println(delta.get(x));
+                            if (aDelta.equals("+")) {
+                                insterms.add(insline.get(a));
+                                a++;
+                            } else if (aDelta.equals("-")) {
+                                delterms.add(delline.get(b));
+                                b++;
+                            } else if (aDelta.equals("|")) {
+                                a++;
+                                b++;
+                            }
+                        }
+                        difflist.add(new DiffPos(insterms,delterms,pretmp[0],pretmp[1],tmp[0],tmp[1]));
+                        pretmp=tmp;
 
-                    pretmp=tmp;
+                    }
+                int last;
+                if(tail>=20){
+                    last=20;
+                    head=tail+1;
                 }
-                new DiffPos()
-                diff=d.diff(pret_text,curr_text);
+                else{
+                    last=tail;
+                    head=0;
+                }
+                for (int ccc = last - 1; ccc >= 0; ccc--) {//リバート検知
+                    int index = (head + ccc) % 20;
+                    List<DiffPos>prediflist=editarray[index].getdifflist();
+                    for(DiffPos diffpos:prediflist){
+                        diffpos
+                    }
+                }
 
                 version++;
                 prev_text=parastr;
@@ -267,7 +301,7 @@ class DiffPos {
     int preshita;
     int nowue;
     int nowshita;
-    public DiffPos(List<String> del, List<String> insert, int preue, int preshita, int nowue, int nowshita){
+    public DiffPos(List<String> insert, List<String> del, int preue, int preshita, int nowue, int nowshita){
         this.del=del;
         this.insert=insert;
         this.preue=preue;
@@ -277,3 +311,58 @@ class DiffPos {
     }
 }
 
+class Kaiseki implements Callable<List<String>> {//形態素解析
+    String wikitext;//gosenだとなんか駄目だった→kuromojimo別のでダメ
+    public Kaiseki(String wikitext){
+        this.wikitext=wikitext;
+    }
+    @Override
+    public List<String> call() {
+
+        StringTagger tagger = SenFactory.getStringTagger(null);
+        CompositeTokenFilter ctFilter = new CompositeTokenFilter();
+
+        try {
+            ctFilter.readRules(new BufferedReader(new StringReader("名詞-数")));
+            tagger.addFilter(ctFilter);
+
+            ctFilter.readRules(new BufferedReader(new StringReader("記号-アルファベット")));
+            tagger.addFilter(ctFilter);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        List<Token> tokens = new ArrayList<Token>();
+        try {
+            tokens=tagger.analyze(wikitext, tokens);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        List<String> current_text = new ArrayList<String>(tokens.size());
+
+        for(Token token:tokens){
+
+            current_text.add(token.getSurface());
+        }
+
+        return current_text;
+    }
+
+
+}
+
+class CalDiff implements Callable<List<String>> {//差分
+    List<String> current_text;
+    List<String> prev_text;
+    public CalDiff(List<String> current_text,List<String> prev_text,String title,int version,String name){
+        this.current_text=current_text;
+        this.prev_text=prev_text;
+    }
+    @Override
+    public List<String> call() {//並列で差分
+        Levenshtein3 d = new Levenshtein3();
+        List<String> diff = d.diff(prev_text, current_text);
+        return diff;
+    }
+}
