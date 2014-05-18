@@ -110,7 +110,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         List<String> prevtext = new ArrayList<String>();
         WhoWriteResult[] resultsarray= new WhoWriteResult[20];//キューっぽいもの
         List<Integer[]>[] samearray=new List[20];
-        List<DelTerm> dellist = new ArrayList<DelTerm>();
+        List<DelTerm> dellist = new ArrayList<DeleteTerm>();
         List<String>[] difflist = new List[20];
         int tail=0;
         int head;
@@ -182,15 +182,16 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                                         } else if (type.equals("-")) {
                                             ue--;
                                             shita--;
+
                                             bb++;
                                         } else if (type.equals("|")) {
                                             Integer[] tmp = {a, b};
                                             samepare.add(tmp);
                                             if (aa > ue) {
-
+                                                break;//?
                                             }
                                             if (aa > shita) {
-
+                                                break;//?
                                             }
                                             aa++;
                                             bb++;
