@@ -1,4 +1,4 @@
-package com.jr2jme.wikidiff;
+package com.jr2jme.Rev;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.mongojack.ObjectId;

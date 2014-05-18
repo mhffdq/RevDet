@@ -1,4 +1,4 @@
-package com.jr2jme.wikidiff;
+package com.jr2jme.Rev;
 
 import com.jr2jme.doc.WhoWrite;
 import com.mongodb.*;
@@ -110,7 +110,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         List<String> prevtext = new ArrayList<String>();
         WhoWriteResult[] resultsarray= new WhoWriteResult[20];//キューっぽいもの
         List<Integer[]>[] samearray=new List[20];
-        List<DeleteTerm> dellist = new ArrayList<DeleteTerm>();
+        List<DelTerm> dellist = new ArrayList<DelTerm>();
         List<String>[] difflist = new List[20];
         int tail=0;
         int head;
@@ -141,7 +141,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
             for (Future<List<String>> aDelta : tasks) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
                 try {
                     List<Integer> instermpos = new ArrayList<Integer>();
-                    List<String> insterm = new ArrayList<String>();
+                    List<Insterm> insterm = new ArrayList<String>();
                     List<Integer> deltermpos = new ArrayList<Integer>();
                     List<String> delterm = new ArrayList<String>();
                     List<Integer[]> samepare = new ArrayList<Integer[]>();
@@ -151,7 +151,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                     for (String type : aDelta.get()) {
                         if (type.equals("+")) {
                             instermpos.add(a);
-                            insterm.add(futurelist.get(c).get().get(a));
+                            insterm.add(new Instrerm(futurelist.get(c).get().get(a),a));
                             a++;
                         } else if (type.equals("-")) {
                             deltermpos.add(b);
@@ -165,7 +165,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                             b++;
                         }
                     }
-                    for(term) {//今消された単語と同じ単語があるかどうか
+                    for(Insterm term:insterm) {//今消された単語と同じ単語があるかどうか
                         for(DeleteTerm del:dellist){//全消された単語の中から
                             if (del.getterm().eqals(term.getterm())) {//確かめて
                                 int ue = del.getue();//文章の上と
@@ -182,7 +182,6 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                                         } else if (type.equals("-")) {
                                             ue--;
                                             shita--;
-
                                             bb++;
                                         } else if (type.equals("|")) {
                                             Integer[] tmp = {a, b};
@@ -198,7 +197,7 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                                         }
                                     }
                                 }
-                                if (term.ue > ue && term.shita < shita) {
+                                if (term.pos > ue && term.pos < shita) {
                                     revertterm;
                                 }
                             }
@@ -337,5 +336,38 @@ class CalDiff implements Callable<List<String>> {//差分
         Levenshtein3 d = new Levenshtein3();
         List<String> diff = d.diff(prev_text, current_text);
         return diff;
+    }
+}
+
+class InsTerm {
+    String term;
+    Integer pos;
+    public InsTerm(String term,Integer pos){
+        this.term=term;
+        this.pos=pos;
+    }
+}
+class DelTerm{
+    String term;
+    List<DelPos> posList=new ArrayList<DelPos>();
+    public DelTerm(String term,int ue,int shita){
+        this.term=term;
+        posList.add(new DelPos(ue,shita));
+
+    }
+}
+class DelPos{
+    int ue;
+    int shita;
+    public DelPos(int ue,int shita){
+        this.ue=ue;
+        this.shita=shita;
+    }
+    public int getUe() {
+        return ue;
+    }
+
+    public int getShita() {
+        return shita;
     }
 }

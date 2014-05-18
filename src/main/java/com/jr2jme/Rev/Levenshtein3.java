@@ -1,4 +1,4 @@
-package com.jr2jme.wikidiff;
+package com.jr2jme.Rev;
 
 /**
  * Created by JR2JME on 2014/03/30.

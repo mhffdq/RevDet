@@ -1,4 +1,4 @@
-package com.jr2jme.wikidiff;
+package com.jr2jme.Rev;
 
 import java.util.ArrayList;
 import java.util.List;
