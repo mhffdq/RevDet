@@ -1,6 +1,5 @@
 package com.jr2jme.Rev;
 
-import com.jr2jme.doc.WhoWrite;
 import com.mongodb.*;
 import net.java.sen.SenFactory;
 import net.java.sen.StringTagger;
@@ -9,10 +8,7 @@ import net.java.sen.filter.stream.CompositeTokenFilter;
 
 import java.io.*;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.*;
 
 //import org.atilika.kuromoji.Token;
@@ -104,16 +100,16 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         sortQuery.put("version", 1);
         DBCursor cursor = coll.find(findQuery).sort(sortQuery).limit(NUMBER);
         int version=1;
+        int nowversion=1;
         List<WhoWrite> prevdata = null;
         long start=System.currentTimeMillis();
         List<String> prev_text=new ArrayList<String>();
         List<String> prevtext = new ArrayList<String>();
-        WhoWriteResult[] resultsarray= new WhoWriteResult[20];//キューっぽいもの
-        List<Integer[]>[] samearray=new List[20];
-        List<DelTerm> dellist = new ArrayList<DeleteTerm>();
-        List<String>[] difflist = new List[20];
+        Map<String,List<DelPos>> delmap = new HashMap<String, List<DelPos>>();
+        List<List<String>> difflist = new ArrayList<List<String>>();
         int tail=0;
         int head;
+
         while(cursor.hasNext()) {//回す
             List<String> namelist=new ArrayList<String>(NUMBER+1);
             List<Future<List<String>>> futurelist = new ArrayList<Future<List<String>>>(NUMBER+1);
@@ -138,81 +134,100 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
                     e.printStackTrace();
                 }
             }
+            i=0;
+            int c = 0;
+            WhoWrite prevwrite=null;
             for (Future<List<String>> aDelta : tasks) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
                 try {
-                    List<Integer> instermpos = new ArrayList<Integer>();
-                    List<Insterm> insterm = new ArrayList<String>();
-                    List<Integer> deltermpos = new ArrayList<Integer>();
-                    List<String> delterm = new ArrayList<String>();
-                    List<Integer[]> samepare = new ArrayList<Integer[]>();
+                    List<InsTerm> insterm = new ArrayList<InsTerm>();
+                    int tmp=0;
+                    WhoWrite whowrite=new WhoWrite();
                     int a = 0;
                     int b = 0;
-                    int c = 0;
+                    List<String> yoyaku=new ArrayList<String>();
+                    List<String> yoyakued=new ArrayList<String>();
+                    List<Integer> yoyakuver=new ArrayList<Integer>();
+                    List<String> edlist = new ArrayList<String>();
                     for (String type : aDelta.get()) {
                         if (type.equals("+")) {
-                            instermpos.add(a);
-                            insterm.add(new Instrerm(futurelist.get(c).get().get(a),a));
+                            edlist.add(namelist.get(i));
+                            insterm.add(new InsTerm(futurelist.get(c).get().get(a),a,namelist.get(i)));
                             a++;
                         } else if (type.equals("-")) {
-                            deltermpos.add(b);
-                            delterm.add(futurelist.get(c).get().get(a));
-                            whowrite.delete(b,editor,version);//追加した単語には位置とかいろいろ情報合って分かるので適当にやる
+                            yoyakued.add(prevwrite.getEditorList().get(b));
+                            yoyakuver.add(prevwrite.getVerlist().get(b));
+                            yoyaku.add(prevtext.get(b));//リバートされるかもしれないリストに突っ込む準備
+                            //delterm.add(futurelist.get(c).get().get(a));
+                            //whowrite.delete(b,namelist.get(i),version);//追加した単語には位置とかいろいろ情報あって分かるので適当にやる
                             b++;
                         } else if (type.equals("|")) {
-                            Integer[] tmp = {a, b};
-                            samepare.add(tmp);
+                            for(int p=0;p<yoyaku.size();p++){
+                                if(delmap.containsKey(yoyaku.get(p))){
+                                    List<DelPos> list = delmap.get(yoyaku.get(p));
+                                    DelPos pos=new DelPos(nowversion,tmp,b,namelist.get(i),yoyakuver.get(p),yoyakued.get(p));
+                                    list.add(pos);
+                                }
+                                else{
+                                    List<DelPos> list =new ArrayList<DelPos>();
+                                    DelPos pos=new DelPos(nowversion,tmp,b,namelist.get(i),yoyakuver.get(p),yoyakued.get(p));
+                                    list.add(pos);
+                                    delmap.put(yoyaku.get(p),list);
+                                }
+                            }
+                            tmp=b;
                             a++;
                             b++;
                         }
-                    }
-                    for(Insterm term:insterm) {//今消された単語と同じ単語があるかどうか
-                        for(DeleteTerm del:dellist){//全消された単語の中から
-                            if (del.getterm().eqals(term.getterm())) {//確かめて
-                                int ue = del.getue();//文章の上と
-                                int shita = del.getshita();//下で
-                                for (int x = nowversion - delterm.getversion(); x < nowversion; x++) {//矛盾が出ないか確かめる
-                                    int aa = 0;
-                                    int bb = 0;
-                                    for (int y = 0; y < difflist[index + x].size(); y++) {
-                                        String type = difflist[index + x].get(y);
-                                        if (type.equals("+")) {
-                                            ue++;
-                                            shita++;
-                                            aa++;
-                                        } else if (type.equals("-")) {
-                                            ue--;
-                                            shita--;
 
-                                            bb++;
-                                        } else if (type.equals("|")) {
-                                            Integer[] tmp = {a, b};
-                                            samepare.add(tmp);
-                                            if (aa > ue) {
-                                                break;//?
+                    }
+                    prevwrite=whowrite;
+                    for(InsTerm term:insterm) {//今消された単語と同じ単語があるかどうか
+                        for(Map.Entry<String,List<DelPos>> del:delmap.entrySet()){//全消された単語の中から
+                            if (del.getKey().equals(term.getTerm())) {//確かめて
+                                for(DelPos delpos:del.getValue()) {
+                                    int ue = delpos.getue();//文章の上と
+                                    int shita = delpos.getshita();//下で
+                                    int delcount=0;
+                                    for (int x = nowversion - delpos.getVersion(); x < nowversion; x++) {//矛盾が出ないか確かめる
+                                        int aa = 0;
+                                        for (int y = 0; y < difflist.get(x).size(); y++) {
+                                            String type = difflist.get(x).get(y);
+                                            if (type.equals("+")) {
+                                                ue++;
+                                                shita++;
+                                                aa++;
+                                            } else if (type.equals("-")) {
+                                                ue--;
+                                                shita--;
+                                                delcount++;
+                                            } else if (type.equals("|")) {
+                                                if (aa > ue) {
+                                                    break;//?
+                                                }
+                                                if (aa > shita) {
+                                                    break;//?
+                                                }
+                                                aa++;
                                             }
-                                            if (aa > shita) {
-                                                break;//?
-                                            }
-                                            aa++;
-                                            bb++;
                                         }
                                     }
-                                }
-                                if (term.pos > ue && term.pos < shita) {
-                                    revertterm;
+                                    if (term.pos > ue && term.pos < shita) {
+                                        term.revertterm(delpos);
+                                        del.getValue().remove(delpos);
+                                    }
                                 }
                             }
                         }
                     }
-                    difflist[tail]=aDelta.get();
-                    samearray[tail] = samepare;
-
+                    difflist.add(aDelta.get());
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 } catch (ExecutionException e) {
                     e.printStackTrace();
                 }
                 offset += NUMBER;
+                nowversion++;
+                i++;
                 //System.out.println(offset);
                 findQuery = new BasicDBObject();//
                 findQuery.put("title", title);
@@ -232,36 +247,6 @@ public class RevDet {//Wikipediaのログから差分をとって誰がどこを
         System.out.println(System.currentTimeMillis() - start);
 
         return cursor;
-
-    }
-
-    private WhoWriteResult whowrite(String title,String currenteditor,List<WhoWrite> prevdata,List<String> text,List<String> prevtext,List<String> delta,int ver) {//誰がどこを書いたか
-        int a = 0;//この関数が一番重要
-        int b = 0;
-        WhoWriteResult whowrite = new WhoWriteResult(title, text, currenteditor, ver);
-        for (String aDelta : delta) {//順番に見て，単語が残ったか追加されたかから，誰がどこ書いたか
-            //System.out.println(delta.get(x));
-            if (aDelta.equals("+")) {
-                //System.out.println(text.get(a));
-                whowrite.addaddterm(text.get(a));
-                a++;
-            } else if (aDelta.equals("-")) {
-                whowrite.adddelterm(prevdata.get(b).getEditor(), prevtext.get(b));
-                b++;
-            } else if (aDelta.equals("|")) {
-                //System.out.println(prevdata.getText_editor().get(b).getTerm());
-                whowrite.remain(prevdata.get(b).getEditor(), text.get(a));
-                a++;
-                b++;
-            }
-        }
-        whowrite.complete(prevdata);
-        /*coll3.insert(whowrite.getInsertedTerms());
-        for (DeletedTerms de : whowrite.getDeletedTerms().values()){
-            coll4.insert(de);
-        }*/
-        return whowrite;
-
 
     }
 
@@ -342,33 +327,85 @@ class CalDiff implements Callable<List<String>> {//差分
 
 class InsTerm {
     String term;
+    String editor;
     Integer pos;
-    public InsTerm(String term,Integer pos){
+    Boolean isRevert=false;
+    Integer revedver=null;
+    String reveded;
+    public InsTerm(String term,Integer pos,String editor){
         this.term=term;
         this.pos=pos;
     }
-}
-class DelTerm{
-    String term;
-    List<DelPos> posList=new ArrayList<DelPos>();
-    public DelTerm(String term,int ue,int shita){
-        this.term=term;
-        posList.add(new DelPos(ue,shita));
+    public void revertterm(DelPos delpos){
+        isRevert=true;
+        revedver=delpos.getVersion();
+        reveded=delpos.getEditor();
+    }
 
+    public String getTerm() {
+        return term;
     }
 }
+
+class Delterm{
+    String term;
+    String editor;
+    int revedver=0;
+    String reveded;
+}
+
 class DelPos{
     int ue;
     int shita;
-    public DelPos(int ue,int shita){
+    int version;
+    String editor;
+    int deledver;
+    String delededitor;
+    public DelPos(int version,int ue,int shita,String editor,int deledver,String delededitor){
         this.ue=ue;
         this.shita=shita;
+        this.version=version;
+        this.delededitor=delededitor;
+        this.editor=editor;
+        this.deledver=deledver;
     }
-    public int getUe() {
+    public int getue() {
         return ue;
     }
 
-    public int getShita() {
+    public int getshita() {
         return shita;
+    }
+
+    public int getVersion() {
+        return version;
+    }
+
+    public String getEditor() {
+        return editor;
+    }
+}
+
+class WhoWrite{
+    List<String> wikitext=new ArrayList<String>();
+    List<String> editorList=new ArrayList<String>();
+    List<Integer> verlist= new ArrayList<Integer>();
+    /*public void delete(int pos,String editor,int version){
+        wikitext.remove(pos);
+        editorList.remove(pos);
+        verlist.remove(pos);
+    }*/
+    public void add(String term,String editor,int ver){
+        wikitext.add(term);
+        editorList.add(editor);
+        verlist.add(ver);
+    }
+
+    public List<Integer> getVerlist() {
+        return verlist;
+    }
+
+    public List<String> getEditorList() {
+        return editorList;
     }
 }
